@@ -17,6 +17,9 @@ stage1:
         mov     ss, ax
         mov     sp, 0x7C00
 
+        ; Preserve the boot drive number.
+        mov     [boot_drive], dl
+
         ; Clear the screen by setting the 80x25 video mode.
         mov     ah, 0x00
         mov     al, 0x03
@@ -25,6 +28,30 @@ stage1:
         mov     si, hello_msg
         call    print
 
+        ; TODO: Check if Int13h extensions are supported.
+        mov     ah, 0x41
+        mov     bx, 0x55AA
+        mov     dl, [boot_drive]
+        int     0x13
+        jc      .int13_exts_unsupported
+
+        ; Load the stage2 of the bootloader.
+        mov     ah, 0x42
+        mov     dl, [boot_drive]
+        mov     si, disk_address_packet
+        int     0x13
+        jc      .stage2_not_loaded
+
+        jmp     stage2
+
+.int13_exts_unsupported:
+        mov     si, int13_exts_unsupported_msg
+        call    print
+        jmp     $
+
+.stage2_not_loaded:
+        mov     si, int13_exts_unsupported_msg
+        call    print
         jmp     $
 
 
@@ -52,7 +79,21 @@ print:
         ret
 
 
+boot_drive              db      0x00
+
+
+disk_address_packet:
+.size                   db      0x10    ; Size of the packet.
+.padding                db      0x00
+.block_count            dw      31      ; Number of blocks (sectors) to transfer.
+.buffer_offset          dw      0x7E00
+.buffer_segment         dw      0x0000
+.first_block_index      dq      0x01    ; Index of the first block (sector).
+
+
 hello_msg               db      "Wisteria Loader", 0x0D, 0x0A, 0x00
+int13_exts_unsupported_msg db   "error: int13h extensions are not supported", 0x0D, 0x0A, 0x00
+stage2_not_loaded_msg   db      "error: couldn't load the stage 2 of the bootloader", 0x0D, 0x0A, 0x00
 
 
 times   510 - ($ - $$)  db      0x00
