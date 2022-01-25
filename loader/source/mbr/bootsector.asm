@@ -28,6 +28,8 @@ stage1:
         mov     si, hello_msg
         call    print
 
+        call    enable_a20_line
+
         ; TODO: Check if Int13h extensions are supported.
         mov     ah, 0x41
         mov     bx, 0x55AA
@@ -79,6 +81,59 @@ print:
         ret
 
 
+;; Enables the A20 address line.
+;;
+;; Note:
+;;      It's virtually impossible that someone will try to run the system without
+;;      BIOS A20 support. Ignore other methods of enabling it.
+;;
+;; Clobbers:
+;;      AX
+align   4,      db      0x00
+enable_a20_line:
+        call    .test_a20_line
+        jc      .enable_using_bios
+        ret
+
+.enable_using_bios:
+        ; Query BIOS A20 gate support.
+        mov     ax, 0x2403
+        int     0x15
+        jb      .enable_failure
+
+        ; Try enabling the A20 address line using BIOS.
+        mov     ax, 0x2401
+        int     0x15
+
+        ; Check if the A20 line was enabled.
+        call    .test_a20_line
+        jc      .enable_failure
+
+.test_a20_line:
+        push    ds
+
+        mov     ax, 0xFFFF
+        mov     ds, ax
+        mov     byte [ds:0x0510], 0xFF
+
+        xor     ax, ax
+        mov     ds, ax
+        cmp     byte [ds:0x0500], 0xFF
+
+        clc
+        jne     .test_a20_line_enabled
+        stc
+
+.test_a20_line_enabled:
+        pop     ds
+        ret
+
+.enable_failure:
+        mov     si, a20_not_enabled_msg
+        call    print
+        jmp     $
+
+
 boot_drive              db      0x00
 
 
@@ -92,6 +147,7 @@ disk_address_packet:
 
 
 hello_msg               db      "Wisteria Loader", 0x0D, 0x0A, 0x00
+a20_not_enabled_msg     db      "error: couldn't enable the A20 address line", 0x0D, 0x0A, 0x00
 int13_exts_unsupported_msg db   "error: int13h extensions are not supported", 0x0D, 0x0A, 0x00
 stage2_not_loaded_msg   db      "error: couldn't load the stage 2 of the bootloader", 0x0D, 0x0A, 0x00
 
