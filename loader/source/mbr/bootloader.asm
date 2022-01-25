@@ -6,14 +6,30 @@ bits    16
 
 
 stage2:
-        mov     si, stage2_hello_msg
-        call    print
+        ; Enable the 32-bit Protected Mode.
 
-        ; Infinite loop.
+        ; Disable interrupts, including NMI.
+        cli
+        in      al, 0x70
+        or      al, 0b10000000
+        out     0x70, al
+
+        lgdt    [gdt_descriptor]
+
+        mov     eax, cr0
+        or      eax, 1
+        mov     cr0, eax
+
+        jmp     0x0008:.enter_32bit_protected_mode
+
+align   4
+bits    32
+.enter_32bit_protected_mode:
         jmp     $
 
 
-stage2_hello_msg        db      "status: stage2", 0x0D, 0x0A, 0x00
+%include        "gdt.asm"
+
 
 ; Fill the MBR gap.
 times   32 * 512 - ($ - $$)     db      0x00
