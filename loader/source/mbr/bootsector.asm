@@ -30,6 +30,8 @@ stage1:
 
         call    enable_a20_line
 
+        call    assert_x64_cpu
+
         ; TODO: Check if Int13h extensions are supported.
         mov     ah, 0x41
         mov     bx, 0x55AA
@@ -134,6 +136,59 @@ enable_a20_line:
         jmp     $
 
 
+;; Clobbers:
+;;      EAX, ECX
+align   4,      db      0x00
+assert_x64_cpu:
+        ; First, check if CPUID is supported. If it isn't, the long mode isn't
+        ; supported as well.
+
+        ; Store EFLAGS in both EAX and ECX.
+        pushfd
+        pop     eax
+        mov     ecx, eax
+
+        ; Flip the ID bit in EFLAGS.
+        xor     eax, 1 << 21
+
+        ; Move EAX back to  EFLAGS with flipped ID bit.
+        push    eax
+        popfd
+
+        ; Copy EFLAGS to EAX.
+        pushfd
+        pop     eax
+
+        ; Restore EFLAGS from ECX; the original register's value/
+        push ecx
+        popfd
+
+        ; If EAX and ECX are equal, the ID bit wasn't flipped and CPUID
+        ; is not supported.
+        xor     eax, ecx
+        jz      .exit_failure
+
+        ; Check if the CPU supports extended CPUID functions.
+        mov     eax, 0x80000000
+        cpuid
+        cmp     eax, 0x80000001
+        jb      .exit_failure
+
+        ; And, finally, check if the CPU supports the long mode.
+        mov     eax, 0x80000001
+        cpuid
+        test    edx, 1 << 29
+        jz      .exit_failure
+
+.exit_success:
+        ret
+
+.exit_failure:
+        mov     si, cpu_not_supported_msg
+        call    print
+        jmp     $
+
+
 boot_drive              db      0x00
 
 
@@ -146,8 +201,9 @@ disk_address_packet:
 .first_block_index      dq      0x01    ; Index of the first block (sector).
 
 
-hello_msg               db      "Wisteria Loader", 0x0D, 0x0A, 0x00
 a20_not_enabled_msg     db      "error: couldn't enable the A20 address line", 0x0D, 0x0A, 0x00
+cpu_not_supported_msg   db      "error: the CPU does not support the 64 bit mode", 0x0D, 0x0A, 0x00
+hello_msg               db      "Wisteria Loader", 0x0D, 0x0A, 0x00
 int13_exts_unsupported_msg db   "error: int13h extensions are not supported", 0x0D, 0x0A, 0x00
 stage2_not_loaded_msg   db      "error: couldn't load the stage 2 of the bootloader", 0x0D, 0x0A, 0x00
 
